@@ -35,6 +35,7 @@ public class BindingMeta implements ApplicationContextAware {
 
 	// key-url,value-method with #@Rest annotation
 	private Map<String, Method> apiMap;
+	private Map<String, String> apiDescMap;
 	// key-apiMap.value.getClass(), value-a Singleton instance for relect
 	// invokation
 	private Map<Class<?>, Object> beanMap;
@@ -50,6 +51,7 @@ public class BindingMeta implements ApplicationContextAware {
 		logger.info("binging REST meta");
 
 		apiMap = new HashMap<String, Method>();
+		apiDescMap = new HashMap<String, String>();
 		beanMap = new HashMap<Class<?>, Object>();
 		paramNamesMap = new HashMap<String, String[]>();
 
@@ -69,6 +71,7 @@ public class BindingMeta implements ApplicationContextAware {
 			if (rest != null) {
 				logger.info("Binding url " + rest.path() + " to " + method);
 				apiMap.put(rest.path(), method);
+				apiDescMap.put(rest.path(), method.toGenericString());
 				String[] paramNames = parseParamNames(method); // param names
 				paramNamesMap.put(rest.path(), paramNames);
 			}
@@ -143,9 +146,9 @@ public class BindingMeta implements ApplicationContextAware {
 	private String[] parseParamNames(Method method) {
 		try {
 			CtMethod cm = ClassPool.getDefault().get(method.getDeclaringClass().getName())
-					.getDeclaredMethod(method.getName());
+			        .getDeclaredMethod(method.getName());
 			LocalVariableAttribute attr = (LocalVariableAttribute) cm.getMethodInfo().getCodeAttribute()
-					.getAttribute(LocalVariableAttribute.tag);
+			        .getAttribute(LocalVariableAttribute.tag);
 
 			String[] paramNames = new String[cm.getParameterTypes().length];
 			int offset = Modifier.isStatic(cm.getModifiers()) ? 0 : 1;
@@ -162,6 +165,10 @@ public class BindingMeta implements ApplicationContextAware {
 
 	public Map<String, Method> getApiMap() {
 		return apiMap;
+	}
+
+	public Map<String, String> getApiDescMap() {
+		return apiDescMap;
 	}
 
 }
