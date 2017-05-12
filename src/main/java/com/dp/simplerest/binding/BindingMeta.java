@@ -13,6 +13,7 @@ import javassist.bytecode.LocalVariableAttribute;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.log4j.Logger;
+import org.jboss.netty.handler.codec.http.HttpMethod;
 import org.jboss.netty.handler.codec.http.HttpRequest;
 import org.jboss.netty.handler.codec.http.QueryStringDecoder;
 import org.springframework.beans.BeansException;
@@ -100,7 +101,9 @@ public class BindingMeta implements ApplicationContextAware {
 			Object[] args = new Object[argClzs.length]; // parsed params
 			String[] paramNames = paramNamesMap.get(path);
 
-			Map<String, List<String>> requestParams = new QueryStringDecoder(uri).getParameters();
+			String paramStr = request.getMethod() == HttpMethod.GET ? uri : uri + "?"
+			        + new String(request.getContent().array());
+			Map<String, List<String>> requestParams = new QueryStringDecoder(paramStr).getParameters();
 
 			for (int i = 0; i < argClzs.length; i++) {
 				Class<?> argClz = argClzs[i];
