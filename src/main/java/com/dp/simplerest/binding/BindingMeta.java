@@ -101,40 +101,49 @@ public class BindingMeta implements ApplicationContextAware {
 			Object[] args = new Object[argClzs.length]; // parsed params
 			String[] paramNames = paramNamesMap.get(path);
 
-			String paramStr = request.getMethod() == HttpMethod.GET ? uri : uri + "?"
-			        + new String(request.getContent().array());
+			String contentStr = new String(request.getContent().array());
+			String paramStr = request.getMethod() == HttpMethod.GET ? uri : uri + "?" + contentStr;
 			Map<String, List<String>> requestParams = new QueryStringDecoder(paramStr).getParameters();
 
-			for (int i = 0; i < argClzs.length; i++) {
-				Class<?> argClz = argClzs[i];
-				String paramName = paramNames[i];
-				if (!requestParams.containsKey(paramName) || CollectionUtils.isEmpty(requestParams.get(paramName))) {
-					// not param of paramName
-					// TODO add more annotations like @Required or
-					// @DefaultValue, etc.
-					args[i] = null;
-					continue;
+			if (argClzs.length == 1 && contentStr.trim().startsWith("{")) {
+				try { // try a json deserialization
+					args[0] = JsonUtils.fromJsonString(argClzs[0], contentStr);
+				} catch (Exception e) {
+					args[0] = null;
 				}
+			} else {
 
-				String param = requestParams.get(paramNames[i]).get(0);
-				if (param == null) {
-					args[i] = null;
-				} else if (argClz == HttpRequest.class) {
-					args[i] = request;
-				} else if (argClz == long.class || argClz == Long.class) {
-					args[i] = Long.valueOf(param);
-				} else if (argClz == int.class || argClz == Integer.class) {
-					args[i] = Integer.valueOf(param);
-				} else if (argClz == boolean.class || argClz == Boolean.class) {
-					args[i] = Boolean.valueOf(param);
-				} else if (argClz == String.class) {
-					args[i] = param;
-					// TODO add here if other type binding needed
-				} else {
-					try { // try a json deserialization
-						args[i] = JsonUtils.fromJsonString(argClz, param);
-					} catch (Exception e) {
+				for (int i = 0; i < argClzs.length; i++) {
+					Class<?> argClz = argClzs[i];
+					String paramName = paramNames[i];
+					if (!requestParams.containsKey(paramName) || CollectionUtils.isEmpty(requestParams.get(paramName))) {
+						// not param of paramName
+						// TODO add more annotations like @Required or
+						// @DefaultValue, etc.
 						args[i] = null;
+						continue;
+					}
+
+					String param = requestParams.get(paramNames[i]).get(0);
+					if (param == null) {
+						args[i] = null;
+					} else if (argClz == HttpRequest.class) {
+						args[i] = request;
+					} else if (argClz == long.class || argClz == Long.class) {
+						args[i] = Long.valueOf(param);
+					} else if (argClz == int.class || argClz == Integer.class) {
+						args[i] = Integer.valueOf(param);
+					} else if (argClz == boolean.class || argClz == Boolean.class) {
+						args[i] = Boolean.valueOf(param);
+					} else if (argClz == String.class) {
+						args[i] = param;
+						// TODO add here if other type binding needed
+					} else {
+						try { // try a json deserialization
+							args[i] = JsonUtils.fromJsonString(argClz, param);
+						} catch (Exception e) {
+							args[i] = null;
+						}
 					}
 				}
 			}
