@@ -13,6 +13,7 @@ import javassist.bytecode.LocalVariableAttribute;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.log4j.Logger;
+import org.jboss.netty.handler.codec.http.HttpMethod;
 import org.jboss.netty.handler.codec.http.HttpRequest;
 import org.jboss.netty.handler.codec.http.QueryStringDecoder;
 import org.springframework.beans.BeansException;
@@ -35,6 +36,7 @@ public class BindingMeta implements ApplicationContextAware {
 
 	// key-url,value-method with #@Rest annotation
 	private Map<String, Method> apiMap;
+	private Map<String, String> apiDescMap;
 	// key-apiMap.value.getClass(), value-a Singleton instance for relect
 	// invokation
 	private Map<Class<?>, Object> beanMap;
@@ -50,6 +52,7 @@ public class BindingMeta implements ApplicationContextAware {
 		logger.info("binging REST meta");
 
 		apiMap = new HashMap<String, Method>();
+		apiDescMap = new HashMap<String, String>();
 		beanMap = new HashMap<Class<?>, Object>();
 		paramNamesMap = new HashMap<String, String[]>();
 
@@ -69,6 +72,7 @@ public class BindingMeta implements ApplicationContextAware {
 			if (rest != null) {
 				logger.info("Binding url " + rest.path() + " to " + method);
 				apiMap.put(rest.path(), method);
+				apiDescMap.put(rest.path(), method.toGenericString());
 				String[] paramNames = parseParamNames(method); // param names
 				paramNamesMap.put(rest.path(), paramNames);
 			}
@@ -97,38 +101,49 @@ public class BindingMeta implements ApplicationContextAware {
 			Object[] args = new Object[argClzs.length]; // parsed params
 			String[] paramNames = paramNamesMap.get(path);
 
-			Map<String, List<String>> requestParams = new QueryStringDecoder(uri).getParameters();
+			String contentStr = new String(request.getContent().array());
+			String paramStr = request.getMethod() == HttpMethod.GET ? uri : uri + "?" + contentStr;
+			Map<String, List<String>> requestParams = new QueryStringDecoder(paramStr).getParameters();
 
-			for (int i = 0; i < argClzs.length; i++) {
-				Class<?> argClz = argClzs[i];
-				String paramName = paramNames[i];
-				if (!requestParams.containsKey(paramName) || CollectionUtils.isEmpty(requestParams.get(paramName))) {
-					// not param of paramName
-					// TODO add more annotations like @Required or
-					// @DefaultValue, etc.
-					args[i] = null;
-					continue;
+			if (argClzs.length == 1 && contentStr.trim().startsWith("{")) {
+				try { // try a json deserialization
+					args[0] = JsonUtils.fromJsonString(argClzs[0], contentStr);
+				} catch (Exception e) {
+					args[0] = null;
 				}
+			} else {
 
-				String param = requestParams.get(paramNames[i]).get(0);
-				if (param == null) {
-					args[i] = null;
-				} else if (argClz == HttpRequest.class) {
-					args[i] = request;
-				} else if (argClz == long.class || argClz == Long.class) {
-					args[i] = Long.valueOf(param);
-				} else if (argClz == int.class || argClz == Integer.class) {
-					args[i] = Integer.valueOf(param);
-				} else if (argClz == boolean.class || argClz == Boolean.class) {
-					args[i] = Boolean.valueOf(param);
-				} else if (argClz == String.class) {
-					args[i] = param;
-					// TODO add here if other type binding needed
-				} else {
-					try { // try a json deserialization
-						args[i] = JsonUtils.fromJsonString(argClz, param);
-					} catch (Exception e) {
+				for (int i = 0; i < argClzs.length; i++) {
+					Class<?> argClz = argClzs[i];
+					String paramName = paramNames[i];
+					if (!requestParams.containsKey(paramName) || CollectionUtils.isEmpty(requestParams.get(paramName))) {
+						// not param of paramName
+						// TODO add more annotations like @Required or
+						// @DefaultValue, etc.
 						args[i] = null;
+						continue;
+					}
+
+					String param = requestParams.get(paramNames[i]).get(0);
+					if (param == null) {
+						args[i] = null;
+					} else if (argClz == HttpRequest.class) {
+						args[i] = request;
+					} else if (argClz == long.class || argClz == Long.class) {
+						args[i] = Long.valueOf(param);
+					} else if (argClz == int.class || argClz == Integer.class) {
+						args[i] = Integer.valueOf(param);
+					} else if (argClz == boolean.class || argClz == Boolean.class) {
+						args[i] = Boolean.valueOf(param);
+					} else if (argClz == String.class) {
+						args[i] = param;
+						// TODO add here if other type binding needed
+					} else {
+						try { // try a json deserialization
+							args[i] = JsonUtils.fromJsonString(argClz, param);
+						} catch (Exception e) {
+							args[i] = null;
+						}
 					}
 				}
 			}
@@ -143,9 +158,9 @@ public class BindingMeta implements ApplicationContextAware {
 	private String[] parseParamNames(Method method) {
 		try {
 			CtMethod cm = ClassPool.getDefault().get(method.getDeclaringClass().getName())
-					.getDeclaredMethod(method.getName());
+			        .getDeclaredMethod(method.getName());
 			LocalVariableAttribute attr = (LocalVariableAttribute) cm.getMethodInfo().getCodeAttribute()
-					.getAttribute(LocalVariableAttribute.tag);
+			        .getAttribute(LocalVariableAttribute.tag);
 
 			String[] paramNames = new String[cm.getParameterTypes().length];
 			int offset = Modifier.isStatic(cm.getModifiers()) ? 0 : 1;
@@ -162,6 +177,10 @@ public class BindingMeta implements ApplicationContextAware {
 
 	public Map<String, Method> getApiMap() {
 		return apiMap;
+	}
+
+	public Map<String, String> getApiDescMap() {
+		return apiDescMap;
 	}
 
 }
