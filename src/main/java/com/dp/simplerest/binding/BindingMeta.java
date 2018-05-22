@@ -1,9 +1,12 @@
 package com.dp.simplerest.binding;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import javax.servlet.http.HttpServletRequest;
 
 import javassist.ClassPool;
 import javassist.CtMethod;
@@ -12,6 +15,7 @@ import javassist.NotFoundException;
 import javassist.bytecode.LocalVariableAttribute;
 
 import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.log4j.Logger;
 import org.jboss.netty.handler.codec.http.HttpMethod;
 import org.jboss.netty.handler.codec.http.HttpRequest;
@@ -48,7 +52,8 @@ public class BindingMeta implements ApplicationContextAware {
 	 * scan all beans and extract #@Rest metas
 	 */
 	@Override
-	public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+	public void setApplicationContext(ApplicationContext applicationContext)
+			throws BeansException {
 		logger.info("binging REST meta");
 
 		apiMap = new HashMap<String, Method>();
@@ -56,7 +61,8 @@ public class BindingMeta implements ApplicationContextAware {
 		beanMap = new HashMap<Class<?>, Object>();
 		paramNamesMap = new HashMap<String, String[]>();
 
-		Map<String, Object> allBeans = applicationContext.getBeansWithAnnotation(Rest.class);
+		Map<String, Object> allBeans = applicationContext
+				.getBeansWithAnnotation(Rest.class);
 		for (Object instance : allBeans.values()) {
 			Class<?> clz = instance.getClass();
 			beanMap.put(clz, instance);
@@ -87,8 +93,25 @@ public class BindingMeta implements ApplicationContextAware {
 	 * @throws Exception
 	 */
 	public Object invoke(HttpRequest request) throws RestException {
-
 		String uri = request.getUri();
+		String contentStr = new String(request.getContent().array());
+		String paramStr = request.getMethod() == HttpMethod.GET ? uri : uri
+				+ "?" + contentStr;
+		return invoke0(uri, contentStr, paramStr, request);
+	}
+
+	public Object invoke(HttpServletRequest request) throws RestException,
+			IOException {
+		String uri = request.getRequestURI();
+		String contentStr = "GET".equalsIgnoreCase(request.getMethod()) ? request
+				.getQueryString() : IOUtils.toString(request.getInputStream(),
+				"utf-8");
+		String paramStr = uri + "?" + contentStr;
+		return invoke0(uri, contentStr, paramStr, request);
+	}
+
+	private Object invoke0(String uri, String contentStr, String paramStr,
+			Object request) throws RestException {
 		int index = uri.indexOf('?');
 		String path = index >= 0 ? uri.substring(0, index) : uri;
 		Method method = apiMap.get(path);
@@ -101,9 +124,8 @@ public class BindingMeta implements ApplicationContextAware {
 			Object[] args = new Object[argClzs.length]; // parsed params
 			String[] paramNames = paramNamesMap.get(path);
 
-			String contentStr = new String(request.getContent().array());
-			String paramStr = request.getMethod() == HttpMethod.GET ? uri : uri + "?" + contentStr;
-			Map<String, List<String>> requestParams = new QueryStringDecoder(paramStr).getParameters();
+			Map<String, List<String>> requestParams = new QueryStringDecoder(
+					paramStr).getParameters();
 
 			if (argClzs.length == 1 && contentStr.trim().startsWith("{")) {
 				try { // try a json deserialization
@@ -116,7 +138,9 @@ public class BindingMeta implements ApplicationContextAware {
 				for (int i = 0; i < argClzs.length; i++) {
 					Class<?> argClz = argClzs[i];
 					String paramName = paramNames[i];
-					if (!requestParams.containsKey(paramName) || CollectionUtils.isEmpty(requestParams.get(paramName))) {
+					if (!requestParams.containsKey(paramName)
+							|| CollectionUtils.isEmpty(requestParams
+									.get(paramName))) {
 						// not param of paramName
 						// TODO add more annotations like @Required or
 						// @DefaultValue, etc.
@@ -133,7 +157,8 @@ public class BindingMeta implements ApplicationContextAware {
 						args[i] = Long.valueOf(param);
 					} else if (argClz == int.class || argClz == Integer.class) {
 						args[i] = Integer.valueOf(param);
-					} else if (argClz == boolean.class || argClz == Boolean.class) {
+					} else if (argClz == boolean.class
+							|| argClz == Boolean.class) {
 						args[i] = Boolean.valueOf(param);
 					} else if (argClz == String.class) {
 						args[i] = param;
@@ -157,10 +182,12 @@ public class BindingMeta implements ApplicationContextAware {
 
 	private String[] parseParamNames(Method method) {
 		try {
-			CtMethod cm = ClassPool.getDefault().get(method.getDeclaringClass().getName())
-			        .getDeclaredMethod(method.getName());
-			LocalVariableAttribute attr = (LocalVariableAttribute) cm.getMethodInfo().getCodeAttribute()
-			        .getAttribute(LocalVariableAttribute.tag);
+			CtMethod cm = ClassPool.getDefault()
+					.get(method.getDeclaringClass().getName())
+					.getDeclaredMethod(method.getName());
+			LocalVariableAttribute attr = (LocalVariableAttribute) cm
+					.getMethodInfo().getCodeAttribute()
+					.getAttribute(LocalVariableAttribute.tag);
 
 			String[] paramNames = new String[cm.getParameterTypes().length];
 			int offset = Modifier.isStatic(cm.getModifiers()) ? 0 : 1;
