@@ -50,6 +50,7 @@ public class SimpleHttpServlet extends HttpServlet {
             } catch (RestException e) {
                 throw new ServletException(e);
             }
+            response.setCharacterEncoding("utf-8");
             response.getWriter().write(JsonUtils.toJsonString(ret));
         }
     }
